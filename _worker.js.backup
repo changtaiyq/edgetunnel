@@ -1,7 +1,7 @@
 
 import { connect } from 'cloudflare:sockets';
 
-let userID = 'hc2yao';
+let userID = 'changtai_0';
 let proxyIP = '';
 let DNS64Server = '';
 //let sub = '';
@@ -29,7 +29,7 @@ let addressesnotls = [];
 let addressesnotlsapi = [];
 let addressescsv = [];
 let DLS = 8;
-let remarkIndex = 1;//CSV备注所在列偏移量
+let remarkIndex = 1;
 let FileName = atob('ZWRnZXR1bm5lbA==');
 let BotToken;
 let ChatID;
@@ -270,50 +270,38 @@ export default {
 
 async function 维列斯OverWSHandler(request) {
 
-    // @ts-ignore
     const webSocketPair = new WebSocketPair();
     const [client, webSocket] = Object.values(webSocketPair);
 
-    // 接受 WebSocket 连接
     webSocket.accept();
 
     let address = '';
     let portWithRandomLog = '';
-    // 日志函数，用于记录连接信息
     const log = (/** @type {string} */ info, /** @type {string | undefined} */ event) => {
         console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
     };
-    // 获取早期数据头部，可能包含了一些初始化数据
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
 
-    // 创建一个可读的 WebSocket 流，用于接收客户端数据
     const readableWebSocketStream = makeReadableWebSocketStream(webSocket, earlyDataHeader, log);
 
-    // 用于存储远程 Socket 的包装器
     let remoteSocketWapper = {
         value: null,
     };
-    // 标记是否为 DNS 查询
     let udpStreamWrite = null;
     let isDns = false;
 
-    // WebSocket 数据流向远程服务器的管道
     readableWebSocketStream.pipeTo(new WritableStream({
         async write(chunk, controller) {
             if (isDns && udpStreamWrite) {
-                // 如果是 DNS 查询，调用 DNS 处理函数
-                //return await handleDNSQuery(chunk, webSocket, null, log);
                 return udpStreamWrite(chunk);
             }
             if (remoteSocketWapper.value) {
-                // 如果已有远程 Socket，直接写入数据
                 const writer = remoteSocketWapper.value.writable.getWriter()
                 await writer.write(chunk);
                 writer.releaseLock();
                 return;
             }
 
-            // 处理 维列斯 协议头部
             const {
                 hasError,
                 message,
@@ -324,15 +312,12 @@ async function 维列斯OverWSHandler(request) {
                 维列斯Version = new Uint8Array([0, 0]),
                 isUDP,
             } = process维列斯Header(chunk, userID);
-            // 设置地址和端口信息，用于日志
             address = addressRemote;
             portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '} `;
             if (hasError) {
-                // 如果有错误，抛出异常
                 throw new Error(message);
                 return;
             }
-            // 如果是 UDP 且端口不是 DNS 端口（53），则关闭连接
             if (isUDP) {
                 if (portRemote === 53) {
                     isDns = true;
@@ -341,20 +326,15 @@ async function 维列斯OverWSHandler(request) {
                     return;
                 }
             }
-            // 构建 维列斯 响应头部
             const 维列斯ResponseHeader = new Uint8Array([维列斯Version[0], 0]);
-            // 获取实际的客户端数据
             const rawClientData = chunk.slice(rawDataIndex);
 
             if (isDns) {
-                // 如果是 DNS 查询，调用 DNS 处理函数
-                //return handleDNSQuery(rawClientData, webSocket, 维列斯ResponseHeader, log);
                 const { write } = await handleUDPOutBound(webSocket, 维列斯ResponseHeader, log);
                 udpStreamWrite = write;
                 udpStreamWrite(rawClientData);
                 return;
             }
-            // 处理 TCP 出站连接
             if (!banHosts.includes(addressRemote)) {
                 log(`处理 TCP 出站连接 ${addressRemote}:${portRemote}`);
                 handleTCPOutBound(remoteSocketWapper, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log);
@@ -375,7 +355,6 @@ async function 维列斯OverWSHandler(request) {
     // 返回一个 WebSocket 升级的响应
     return new Response(null, {
         status: 101,
-        // @ts-ignore
         webSocket: client,
     });
 }
@@ -392,16 +371,12 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
 
     async function connectAndWrite(address, port, socks = false, http = false) {
         log(`connected to ${address}:${port}`);
-        //if (/^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(address)) address = `${atob('d3d3Lg==')}${address}${atob('LmlwLjA5MDIyNy54eXo=')}`;
-        // 先确定连接方式，再创建连接
         const tcpSocket = socks
             ? (http ? await httpConnect(address, port, log) : await socks5Connect(addressType, address, port, log))
             : connect({ hostname: address, port: port });
 
         remoteSocket.value = tcpSocket;
-        //log(`connected to ${address}:${port}`);
         const writer = tcpSocket.writable.getWriter();
-        // 首次写入，通常是 TLS 客户端 Hello 消息
         await writer.write(rawClientData);
         writer.releaseLock();
         return tcpSocket;
@@ -421,16 +396,11 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
         remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
     }
 
-    /**
-     * 重试函数：当 Cloudflare 的 TCP Socket 没有传入数据时，我们尝试重定向 IP
-     * 这可能是因为某些网络问题导致的连接失败
-     */
+
     async function retry() {
         if (enableSocks) {
-            // 如果启用了 SOCKS5，通过 SOCKS5 代理重试连接
             tcpSocket = await connectAndWrite(addressRemote, portRemote, true, enableHttp);
         } else {
-            // 否则，尝试使用预设的代理 IP（如果有）或原始地址重试连接
             if (!proxyIP || proxyIP == '') {
                 proxyIP = atob('UFJPWFlJUC50cDEuMDkwMjI3Lnh5eg==');
             } else if (proxyIP.includes(']:')) {
@@ -443,39 +413,24 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
             if (proxyIP.includes('.tp')) portRemote = proxyIP.split('.tp')[1].split('.')[0] || portRemote;
             tcpSocket = await connectAndWrite(proxyIP.toLowerCase() || addressRemote, portRemote);
         }
-        /* 无论重试是否成功，都要关闭 WebSocket（可能是为了重新建立连接）
-        tcpSocket.closed.catch(error => {
-            console.log('retry tcpSocket closed error', error);
-        }).finally(() => {
-            safeCloseWebSocket(webSocket);
-        })
-        */
-        // 建立从远程 Socket 到 WebSocket 的数据流
+
         remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, nat64, log);
     }
 
     let useSocks = false;
     if (go2Socks5s.length > 0 && enableSocks) useSocks = await useSocks5Pattern(addressRemote);
-    // 首次尝试连接远程服务器
     let tcpSocket = await connectAndWrite(addressRemote, portRemote, useSocks, enableHttp);
 
-    // 当远程 Socket 就绪时，将其传递给 WebSocket
-    // 建立从远程服务器到 WebSocket 的数据流，用于将远程服务器的响应发送回客户端
-    // 如果连接失败或无数据，retry 函数将被调用进行重试
+
     remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 }
 
 function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
-    // 标记可读流是否已被取消
     let readableStreamCancel = false;
 
-    // 创建一个新的可读流
     const stream = new ReadableStream({
-        // 当流开始时的初始化函数
         start(controller) {
-            // 监听 WebSocket 的消息事件
             webSocketServer.addEventListener('message', (event) => {
-                // 如果流已被取消，不再处理新消息
                 if (readableStreamCancel) {
                     return;
                 }
@@ -484,58 +439,40 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
                 controller.enqueue(message);
             });
 
-            // 监听 WebSocket 的关闭事件
-            // 注意：这个事件意味着客户端关闭了客户端 -> 服务器的流
-            // 但是，服务器 -> 客户端的流仍然打开，直到在服务器端调用 close()
-            // WebSocket 协议要求在每个方向上都要发送单独的关闭消息，以完全关闭 Socket
+
             webSocketServer.addEventListener('close', () => {
-                // 客户端发送了关闭信号，需要关闭服务器端
                 safeCloseWebSocket(webSocketServer);
-                // 如果流未被取消，则关闭控制器
                 if (readableStreamCancel) {
                     return;
                 }
                 controller.close();
             });
 
-            // 监听 WebSocket 的错误事件
             webSocketServer.addEventListener('error', (err) => {
                 log('WebSocket 服务器发生错误');
-                // 将错误传递给控制器
                 controller.error(err);
             });
 
-            // 处理 WebSocket 0-RTT（零往返时间）的早期数据
-            // 0-RTT 允许在完全建立连接之前发送数据，提高了效率
+
             const { earlyData, error } = base64ToArrayBuffer(earlyDataHeader);
             if (error) {
-                // 如果解码早期数据时出错，将错误传递给控制器
                 controller.error(error);
             } else if (earlyData) {
-                // 如果有早期数据，将其加入流的队列中
                 controller.enqueue(earlyData);
             }
         },
 
-        // 当使用者从流中拉取数据时调用
         pull(controller) {
-            // 这里可以实现反压机制
-            // 如果 WebSocket 可以在流满时停止读取，我们就可以实现反压
-            // 参考：https://streams.spec.whatwg.org/#example-rs-push-backpressure
+
         },
 
-        // 当流被取消时调用
         cancel(reason) {
-            // 流被取消的几种情况：
-            // 1. 当管道的 WritableStream 有错误时，这个取消函数会被调用，所以在这里处理 WebSocket 服务器的关闭
-            // 2. 如果 ReadableStream 被取消，所有 controller.close/enqueue 都需要跳过
-            // 3. 但是经过测试，即使 ReadableStream 被取消，controller.error 仍然有效
+
             if (readableStreamCancel) {
                 return;
             }
             log(`可读流被取消，原因是 ${reason}`);
             readableStreamCancel = true;
-            // 安全地关闭 WebSocket
             safeCloseWebSocket(webSocketServer);
         }
     });
@@ -543,17 +480,7 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
     return stream;
 }
 
-// https://xtls.github.io/development/protocols/维列斯.html
-// https://github.com/zizifn/excalidraw-backup/blob/main/v2ray-protocol.excalidraw
-
-/**
- * 解析 维列斯 协议的头部数据
- * @param { ArrayBuffer} 维列斯Buffer 维列斯 协议的原始头部数据
- * @param {string} userID 用于验证的用户 ID
- * @returns {Object} 解析结果，包括是否有错误、错误信息、远程地址信息等
- */
 function process维列斯Header(维列斯Buffer, userID) {
-    // 检查数据长度是否足够（至少需要 24 字节）
     if (维列斯Buffer.byteLength < 24) {
         return {
             hasError: true,
@@ -561,23 +488,22 @@ function process维列斯Header(维列斯Buffer, userID) {
         };
     }
 
-    // 解析 维列斯 协议版本（第一个字节）
+
     const version = new Uint8Array(维列斯Buffer.slice(0, 1));
 
     let isValidUser = false;
     let isUDP = false;
 
-    // 验证用户 ID（接下来的 16 个字节）
+
     function isUserIDValid(userID, userIDLow, buffer) {
         const userIDArray = new Uint8Array(buffer.slice(1, 17));
         const userIDString = stringify(userIDArray);
         return userIDString === userID || userIDString === userIDLow;
     }
 
-    // 使用函数验证
+
     isValidUser = isUserIDValid(userID, userIDLow, 维列斯Buffer);
 
-    // 如果用户 ID 无效，返回错误
     if (!isValidUser) {
         return {
             hasError: true,
@@ -585,45 +511,32 @@ function process维列斯Header(维列斯Buffer, userID) {
         };
     }
 
-    // 获取附加选项的长度（第 17 个字节）
     const optLength = new Uint8Array(维列斯Buffer.slice(17, 18))[0];
-    // 暂时跳过附加选项
 
-    // 解析命令（紧跟在选项之后的 1 个字节）
-    // 0x01: TCP, 0x02: UDP, 0x03: MUX（多路复用）
     const command = new Uint8Array(
         维列斯Buffer.slice(18 + optLength, 18 + optLength + 1)
     )[0];
 
-    // 0x01 TCP
-    // 0x02 UDP
-    // 0x03 MUX
+
     if (command === 1) {
-        // TCP 命令，不需特殊处理
     } else if (command === 2) {
-        // UDP 命令
         isUDP = true;
     } else {
-        // 不支持的命令
         return {
             hasError: true,
             message: `command ${command} is not support, command 01-tcp,02-udp,03-mux`,
         };
     }
 
-    // 解析远程端口（大端序，2 字节）
     const portIndex = 18 + optLength + 1;
     const portBuffer = 维列斯Buffer.slice(portIndex, portIndex + 2);
-    // port is big-Endian in raw data etc 80 == 0x005d
     const portRemote = new DataView(portBuffer).getUint16(0);
 
-    // 解析地址类型和地址
     let addressIndex = portIndex + 2;
     const addressBuffer = new Uint8Array(
         维列斯Buffer.slice(addressIndex, addressIndex + 1)
     );
 
-    // 地址类型：1-IPv4(4字节), 2-域名(可变长), 3-IPv6(16字节)
     const addressType = addressBuffer[0];
     let addressLength = 0;
     let addressValueIndex = addressIndex + 1;
@@ -631,48 +544,38 @@ function process维列斯Header(维列斯Buffer, userID) {
 
     switch (addressType) {
         case 1:
-            // IPv4 地址
             addressLength = 4;
-            // 将 4 个字节转为点分十进制格式
             addressValue = new Uint8Array(
                 维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
             ).join('.');
             break;
         case 2:
-            // 域名
-            // 第一个字节是域名长度
             addressLength = new Uint8Array(
                 维列斯Buffer.slice(addressValueIndex, addressValueIndex + 1)
             )[0];
             addressValueIndex += 1;
-            // 解码域名
             addressValue = new TextDecoder().decode(
                 维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
             );
             break;
         case 3:
-            // IPv6 地址
             addressLength = 16;
             const dataView = new DataView(
                 维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
             );
-            // 每 2 字节构成 IPv6 地址的一部分
             const ipv6 = [];
             for (let i = 0; i < 8; i++) {
                 ipv6.push(dataView.getUint16(i * 2).toString(16));
             }
             addressValue = ipv6.join(':');
-            // seems no need add [] for ipv6
             break;
         default:
-            // 无效的地址类型
             return {
                 hasError: true,
                 message: `invild addressType is ${addressType}`,
             };
     }
 
-    // 确保地址不为空
     if (!addressValue) {
         return {
             hasError: true,
@@ -680,10 +583,9 @@ function process维列斯Header(维列斯Buffer, userID) {
         };
     }
 
-    // 返回解析结果
     return {
         hasError: false,
-        addressRemote: addressValue,  // 解析后的远程地址
+        addressRemote: addressValue, 
         addressType,				 // 地址类型
         portRemote,				 // 远程端口
         rawDataIndex: addressValueIndex + addressLength,  // 原始数据的实际起始位置
@@ -842,13 +744,7 @@ for (let i = 0; i < 256; ++i) {
     byteToHex.push((i + 256).toString(16).slice(1));
 }
 
-/**
- * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
- * 这是一个底层函数，直接操作字节，不做任何验证
- * @param {Uint8Array} arr 包含 UUID 字节的数组
- * @param {number} offset 数组中 UUID 开始的位置，默认为 0
- * @returns {string} UUID 字符串
- */
+
 function unsafeStringify(arr, offset = 0) {
     // 直接从查找表中获取每个字节的十六进制表示，并拼接成 UUID 格式
     // 8-4-4-4-12 的分组是通过精心放置的连字符 "-" 实现的
@@ -861,14 +757,7 @@ function unsafeStringify(arr, offset = 0) {
         byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase();
 }
 
-/**
- * 将字节数组转换为 UUID 字符串，并验证其有效性
- * 这是一个安全的函数，它确保返回的 UUID 格式正确
- * @param {Uint8Array} arr 包含 UUID 字节的数组
- * @param {number} offset 数组中 UUID 开始的位置，默认为 0
- * @returns {string} 有效的 UUID 字符串
- * @throws {TypeError} 如果生成的 UUID 字符串无效
- */
+
 function stringify(arr, offset = 0) {
     // 使用不安全的函数快速生成 UUID 字符串
     const uuid = unsafeStringify(arr, offset);
@@ -953,12 +842,6 @@ async function handleUDPOutBound(webSocket, 维列斯ResponseHeader, log) {
     };
 }
 
-/**
- * 处理 DNS 查询的函数
- * @param {ArrayBuffer} udpChunk - 客户端发送的 DNS 查询数据
- * @param {ArrayBuffer} 维列斯ResponseHeader - 维列斯 协议的响应头部数据
- * @param {(string)=> void} log - 日志记录函数
- */
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
     // 无论客户端发送到哪个 DNS 服务器，我们总是使用硬编码的服务器
     // 因为有些 DNS 服务器不支持 DNS over TCP
@@ -1009,13 +892,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
     }
 }
 
-/**
- * 建立 SOCKS5 代理连接
- * @param {number} addressType 目标地址类型（1: IPv4, 2: 域名, 3: IPv6）
- * @param {string} addressRemote 目标地址（可以是 IP 或域名）
- * @param {number} portRemote 目标端口
- * @param {function} log 日志记录函数
- */
+
 async function socks5Connect(addressType, addressRemote, portRemote, log) {
     const { username, password, hostname, port } = parsedSocks5Address;
     // 连接到 SOCKS5 代理服务器
@@ -1024,17 +901,7 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
         port,	// SOCKS5 服务器的端口
     });
 
-    // 请求头格式（Worker -> SOCKS5 服务器）:
-    // +----+----------+----------+
-    // |VER | NMETHODS | METHODS  |
-    // +----+----------+----------+
-    // | 1  |	1	 | 1 to 255 |
-    // +----+----------+----------+
 
-    // https://en.wikipedia.org/wiki/SOCKS#SOCKS5
-    // METHODS 字段的含义:
-    // 0x00 不需要认证
-    // 0x02 用户名/密码认证 https://datatracker.ietf.org/doc/html/rfc1929
     const socksGreeting = new Uint8Array([5, 2, 0, 2]);
     // 5: SOCKS5 版本号, 2: 支持的认证方法数, 0和2: 两种认证方法（无认证和用户名/密码）
 
@@ -1046,12 +913,7 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
     const reader = socket.readable.getReader();
     const encoder = new TextEncoder();
     let res = (await reader.read()).value;
-    // 响应格式（SOCKS5 服务器 -> Worker）:
-    // +----+--------+
-    // |VER | METHOD |
-    // +----+--------+
-    // | 1  |   1	|
-    // +----+--------+
+
     if (res[0] !== 0x05) {
         log(`SOCKS5 服务器版本错误: 收到 ${res[0]}，期望是 5`);
         return;
@@ -1068,12 +930,7 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
             log("请提供用户名和密码");
             return;
         }
-        // 认证请求格式:
-        // +----+------+----------+------+----------+
-        // |VER | ULEN |  UNAME   | PLEN |  PASSWD  |
-        // +----+------+----------+------+----------+
-        // | 1  |  1   | 1 to 255 |  1   | 1 to 255 |
-        // +----+------+----------+------+----------+
+
         const authRequest = new Uint8Array([
             1,				   // 认证子协议版本
             username.length,	// 用户名长度
@@ -1090,23 +947,7 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
         }
     }
 
-    // 请求数据格式（Worker -> SOCKS5 服务器）:
-    // +----+-----+-------+------+----------+----------+
-    // |VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |
-    // +----+-----+-------+------+----------+----------+
-    // | 1  |  1  | X'00' |  1   | Variable |	2	 |
-    // +----+-----+-------+------+----------+----------+
-    // ATYP: 地址类型
-    // 0x01: IPv4 地址
-    // 0x03: 域名
-    // 0x04: IPv6 地址
-    // DST.ADDR: 目标地址
-    // DST.PORT: 目标端口（网络字节序）
 
-    // addressType
-    // 1 --> IPv4  地址长度 = 4
-    // 2 --> 域名
-    // 3 --> IPv6  地址长度 = 16
     let DSTADDR;	// DSTADDR = ATYP + DST.ADDR
     switch (addressType) {
         case 1: // IPv4
@@ -1135,12 +976,7 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
     log('已发送 SOCKS5 请求');
 
     res = (await reader.read()).value;
-    // 响应格式（SOCKS5 服务器 -> Worker）:
-    //  +----+-----+-------+------+----------+----------+
-    // |VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT |
-    // +----+-----+-------+------+----------+----------+
-    // | 1  |  1  | X'00' |  1   | Variable |	2	 |
-    // +----+-----+-------+------+----------+----------+
+
     if (res[1] === 0x00) {
         log("SOCKS5 连接已建立");
     } else {
@@ -1152,12 +988,7 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
     return socket;
 }
 
-/**
- * 建立 HTTP 代理连接
- * @param {string} addressRemote 目标地址（可以是 IP 或域名）
- * @param {number} portRemote 目标端口
- * @param {function} log 日志记录函数
- */
+
 async function httpConnect(addressRemote, portRemote, log) {
     const { username, password, hostname, port } = parsedSocks5Address;
     const sock = await connect({
@@ -1269,15 +1100,7 @@ async function httpConnect(addressRemote, portRemote, log) {
     return sock;
 }
 
-/**
- * SOCKS5 代理地址解析器
- * 此函数用于解析 SOCKS5 代理地址字符串，提取出用户名、密码、主机名和端口号
- * 
- * @param {string} address SOCKS5 代理地址，格式可以是：
- *   - "username:password@hostname:port" （带认证）
- *   - "hostname:port" （不需认证）
- *   - "username:password@[ipv6]:port" （IPv6 地址需要用方括号括起来）
- */
+
 function socks5AddressParser(address) {
     // 使用 "@" 分割地址，分为认证部分和服务器地址部分
     const lastAtIndex = address.lastIndexOf("@");
@@ -1330,16 +1153,7 @@ function socks5AddressParser(address) {
     }
 }
 
-/**
- * 恢复被伪装的信息
- * 这个函数用于将内容中的假用户ID和假主机名替换回真实的值
- * 
- * @param {string} content 需要处理的内容
- * @param {string} userID 真实的用户ID
- * @param {string} hostName 真实的主机名
- * @param {boolean} isBase64 内容是否是Base64编码的
- * @returns {string} 恢复真实信息后的内容
- */
+
 function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName, isBase64) {
     if (isBase64) content = atob(content);  // 如果内容是Base64编码的，先解码
 
@@ -1353,14 +1167,7 @@ function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName,
     return content;
 }
 
-/**
- * 双重MD5哈希函数
- * 这个函数对输入文本进行两次MD5哈希，增强安全性
- * 第二次哈希使用第一次哈希结果的一部分作为输入
- * 
- * @param {string} 文本 要哈希的文本
- * @returns {Promise<string>} 双重哈希后的小写十六进制字符串
- */
+
 async function 双重哈希(文本) {
     const 编码器 = new TextEncoder();
 
@@ -1447,13 +1254,7 @@ function 配置信息(UUID, 域名地址) {
 
 let subParams = ['sub', 'base64', 'b64', 'clash', 'singbox', 'sb'];
 const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tJTNDYnIlM0UKZ2l0aHViJTIwJUU5JUExJUI5JUU3JTlCJUFFJUU1JTlDJUIwJUU1JTlEJTgwJTIwU3RhciFTdGFyIVN0YXIhISElM0NiciUzRQolM0NhJTIwaHJlZiUzRCUyN2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRmNtbGl1JTJGZWRnZXR1bm5lbCUyNyUzRWh0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRmNtbGl1JTJGZWRnZXR1bm5lbCUzQyUyRmElM0UlM0NiciUzRQotLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQolMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjM='));
-/**
- * @param {string} userID
- * @param {string | null} hostName
- * @param {string} sub
- * @param {string} UA
- * @returns {Promise<string>}
- */
+
 async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
     if (sub) {
         const match = sub.match(/^(?:https?:\/\/)?([^\/]+)/);
@@ -4338,23 +4139,9 @@ async function bestIP(request, env, txt = 'ADD.txt') {
     });
 }
 
-/**
- * 获取 Cloudflare 账户今日使用量统计
- * @param {string} accountId - 账户ID（可选，如果没有会自动获取）
- * @param {string} email - Cloudflare 账户邮箱
- * @param {string} apikey - Cloudflare API 密钥
- * @param {string} apitoken - Cloudflare API 令牌
- * @param {number} all - 总限额，默认10万次
- * @returns {Array} [总限额, Pages请求数, Workers请求数, 总请求数]
- */
+
 async function getUsage(accountId, email, apikey, apitoken, all = 100000) {
-    /**
-     * 获取 Cloudflare 账户ID
-     * @param {string} email - 账户邮箱
-     * @param {string} apikey - API密钥
-     * @param {number} accountIndex - 取第几个账户，默认第0个
-     * @returns {string} 账户ID
-     */
+
     async function getAccountId(email, apikey) {
         console.log('正在获取账户信息...');
 
@@ -4568,4 +4355,5 @@ async function nginx() {
 	`
     return text;
 }
+
 
